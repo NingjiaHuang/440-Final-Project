@@ -13,7 +13,5 @@ def most_likely_cause_estimator(concept_instance: np.array, bag: np.ndarray, sig
     '''
     similarity_list = []
     for instance in bag: 
-        print(instance)
-        print(concept_instance)
         similarity_list.append(np.exp(-(np.linalg.norm(instance - concept_instance) ** 2/(sigma ** 2))))
     return max(similarity_list)
