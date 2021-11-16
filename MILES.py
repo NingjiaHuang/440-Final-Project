@@ -1,7 +1,15 @@
 import numpy as np
+from numpy.core.multiarray import concatenate
 import util
 
 class MILES():
+    # def __init__(self, sigma):
+    #     self._sigma = sigma
+    
+    # @property
+    # def sigma(self):
+    #     return self._sigma
+    
     def embed_one_bag(self, concept_class: np.ndarray, bag: np.ndarray, sigma: float) -> np.ndarray: 
         '''
         function: embed one bag into the instance feature space
@@ -17,12 +25,21 @@ class MILES():
             embedded_bag.append(util.most_likely_cause_estimator(concept, bag, sigma))
         return np.array(embedded_bag)
 
-        
-# bag1 = np.matrix([[2,3],[4,5]])
-# concept1 = np.matrix([[2,3],[4,5],[2,2],[3,4]])
-# res = np.array([1.00000000e+00,1.00000000e+00,1.83156389e-02,3.35462628e-04])
-# print(embed_one_bag(concept1, bag1, 0.5))
-# print(embed_one_bag(concept1, bag1, 0.5))
-# print(res)
-# print(np.array_equal(res, embed_one_bag(concept1, bag1, 0.5)))
-# print(embed_one_bag(concept1, bag1, 0.5)[2]-res[2])
+    def embed_all_bags(self, concept_class: np.ndarray, bags: np.ndarray, sigma: float):
+        '''
+        function: construct the matrix for all embedded bags
+        params: 
+            concept_class: all concepts (instances)
+            bags: all bags
+            sigma: scaling factor
+        return:
+            an ndarray of the embedded bags.
+        '''
+        embedded_bags = []
+        for bag in bags: 
+            embedded_bags.append(self.embed_one_bag(concept_class, bag, sigma))
+        return np.array(embedded_bags).T
+
+# bags = np.array([[[2,3],[4,5]], [[3,3],[2,5]], [[4,4],[1,5]]])
+# concepts = np.array([[2,3], [4,5], [3,3], [2,5], [4,4], [1,5]])
+# print(embed_all_bags(concepts, bags, 0.5))
