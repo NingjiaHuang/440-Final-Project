@@ -25,7 +25,6 @@ def generate_concept_class(bags: np.ndarray) -> np.ndarray:
         for example in bag:
             if len(np.unique(example)) != 1:
                 concept_class.append(np.array(example))
-    # print(type(np.array(concept_class)))
     return np.array(concept_class)
 
 def config_irregular_list(raw_list: List) -> np.ndarray:
@@ -45,3 +44,6 @@ def config_irregular_list(raw_list: List) -> np.ndarray:
 
 def load_data_csv(path):
     return load_data(path)
+
+def euclidean_distance(x1: np.ndarray, x2: np.ndarray):
+    return np.sqrt(np.sum((x1.reshape(1, x2.shape[1])-x2)**2, axis=1))
