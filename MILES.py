@@ -100,7 +100,10 @@ class MILES(Classifier):
         for bag in bags: 
             embedded_bags.append(self.embed_one_bag(concept_class, bag, sigma))
         return np.array(embedded_bags).T
-
+    
+    def extension_YARDS():
+        pass
+    
     def fit(self, training_data: np.ndarray, training_labels: np.ndarray):
         '''
         function: generate the svm model for prediction purpose

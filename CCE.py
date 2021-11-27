@@ -13,9 +13,14 @@ from Classifier import Classifier
 from sklearn import metrics
 from sklearn.datasets import load_iris
 from mil.data.datasets.loader import load_data
-from sklearn.cluster import DBSCAN
-
-
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import KMeans
+from sklearn.mixture import GaussianMixture
+from sklearn.ensemble import VotingClassifier
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.gaussian_process.kernels import RBF
+from sklearn.decomposition import KernelPCA
+from sklearn.metrics.pairwise import rbf_kernel
 
 class KMEANS:
     def __init__(self, k: int, max_iter=2000):
@@ -96,15 +101,18 @@ class KMEANS:
         self.centroids = centroids
         self.clusters = clusters
         return cluster_success
+    
+    def predict(self, X):
+        y_preds = self.update_assignment(self.centroids, X)
+        return y_preds
 
 class CCE(Classifier):
     def __init__(self, d: int, max_iter: int):
         self._d = d
-        self._clustering_result = None
-        self._model = None
+        self._clustering_result_kmeans = None
         self._max_iter = max_iter
-        self._dbscan_model = None
-    
+        self._kmeans_model = None
+
     @property
     def d(self):
         return self._d
@@ -114,20 +122,20 @@ class CCE(Classifier):
         self._d = d
 
     @property
-    def clustering_result(self):
-        return self._clustering_result
+    def clustering_result_kmeans(self):
+        return self._clustering_result_kmeans
     
-    @clustering_result.setter
-    def clustering_result(self, clustering_result):
-        self._clustering_result = clustering_result
+    @clustering_result_kmeans.setter
+    def clustering_result_kmeans(self, clustering_result_kmeans):
+        self._clustering_result_kmeans = clustering_result_kmeans
 
     @property
-    def model(self):
-        return self._model
+    def kmeans_model(self):
+        return self._kmeans_model
 
-    @model.setter
-    def model(self, model):
-        self._model = model
+    @kmeans_model.setter
+    def kmeans_model(self, kmeans_model):
+        self._kmeans_model = kmeans_model
 
     @property
     def max_iter(self):
@@ -136,27 +144,31 @@ class CCE(Classifier):
     @max_iter.setter
     def max_iter(self, max_iter):
         self._max_iter = max_iter
-    
-    # def dbscan_clustering(self, ):
 
-    def generate_bag_feature_vector(self, concept_class: np.ndarray, len_bags: int, X: List): 
-        '''
-        function: d features are generated in the way that if a bag has instance in the ith group, then the value of the ith feature is set to 1 and 0 otherwise. 
-        params: 
-            max_iter: the max number of iterations for the clustering algorithm. 
-            concept_class: all the instances.
-            len_bags: number of bags.
-        return: 
-            The array of binary-wise representation of the bags. 
-        '''
+    def generate_bag_feature_vector_kmeans(self, concept_class: np.ndarray, len_bags: int, X: List): 
         new_bags_rep = np.zeros((len_bags, self.d))
-        kmeans = KMEANS(self.d, self.max_iter)
-        kmeans.fit(concept_class)
-        self.clustering_result = kmeans.clusters
+
+        # # my k means
+        # kmeans = KMEANS(self.d, self.max_iter) 
+        # kmeans.fit(concept_class)
+        # self.clustering_result_kmeans = kmeans.clusters
+
+        # # sklearn k means
+        # kmeans = KMeans(n_clusters=self.d, random_state=0).fit(concept_class)
+        # self.clustering_result_kmeans = kmeans.labels_
+
+        # KPCA
+        kpca = KernelPCA(n_components=None, kernel='precomputed')
+        lambda_kpca = 0.5
+        kernel_old = lambda_kpca*pow(np.dot(concept_class, concept_class.T), 2) + (1-lambda_kpca)*rbf_kernel(concept_class)
+        old_kpca = kpca.fit_transform(kernel_old)
+        kmeans = KMeans(n_clusters=self.d, random_state=0).fit(old_kpca)
+        self.clustering_result_kmeans = kmeans.labels_
+
         # use a dict to match the cluster with the instances
         cluster_dict = defaultdict()
         for i in range(0, self.d):
-            index = np.where(self.clustering_result == i)
+            index = np.where(self.clustering_result_kmeans == i)
             cluster_dict[i] = concept_class[index]
         for bag in range(0, len_bags):
             new_bag_rep = np.zeros(self.d)
@@ -170,14 +182,16 @@ class CCE(Classifier):
         return new_bags_rep
 
     def fit(self, concept_class: np.ndarray, len_bags: int, X: List, labels: np.ndarray):
-        new_bags_rep = self.generate_bag_feature_vector(concept_class, len_bags, X)
-        self.model = svm.SVC(kernel = "poly") 
-        self.model.fit(new_bags_rep, labels)
+        
+        new_bags_rep_kmeans = self.generate_bag_feature_vector_kmeans(concept_class, len_bags, X)
+        # self.kmeans_model = svm.SVC(kernel="rbf").fit(new_bags_rep_kmeans, labels) 
+        kernel = 1.0 * RBF(1.0)
+        self.kmeans_model = GaussianProcessClassifier(kernel=kernel, random_state=0).fit(new_bags_rep_kmeans, labels)
 
     def predict(self, test_concept_class: np.ndarray, len_bags: int, bags_test: List):
-        new_bags_rep = self.generate_bag_feature_vector(test_concept_class, len_bags, bags_test)
-        prediction = self.model.predict(new_bags_rep)
-        return prediction
+        new_bags_rep_kmeans = self.generate_bag_feature_vector_kmeans(test_concept_class, len_bags, bags_test)
+        prediction_kmeans = self.kmeans_model.predict(new_bags_rep_kmeans)
+        return prediction_kmeans
 
 def load_musk1():
     return load_data('/Users/ningjia/Desktop/440-Final-Project/dataset/musk1.csv')
@@ -190,10 +204,10 @@ y_train = np.array(y_train)
 y_test = np.array(y_test)
 concept_class = util.generate_concept_class(bags_train)
 test_concept_class = util.generate_concept_class(bags_test)
-cce = CCE(10, 3000)
+cce = CCE(5, 3000) 
+#7: 0.6842
 cce.fit(concept_class, len(bags_train), list_bag_train, y_train)
 y_pred = cce.predict(test_concept_class, len(bags_test), bags_test)
-print(cce.predict(test_concept_class, len(bags_test), bags_test))
 print(y_test)    
 print("accuracy:", metrics.accuracy_score(y_test, y_pred))
 
