@@ -1,26 +1,18 @@
 from collections import defaultdict
 from typing import List
 import numpy as np
-from numpy.core.multiarray import concatenate
-from numpy.matrixlib import matrix
 import util
-import sklearn as skl
 from sklearn import svm
 import argparse
 import os
 import os.path
 from Classifier import Classifier
-from sklearn import metrics
-from sklearn.datasets import load_iris
-from mil.data.datasets.loader import load_data
-from sklearn.cluster import AgglomerativeClustering
 from sklearn.cluster import KMeans
-from sklearn.mixture import GaussianMixture
-from sklearn.ensemble import VotingClassifier
-from sklearn.gaussian_process import GaussianProcessClassifier
-from sklearn.gaussian_process.kernels import RBF
+from sklearn import metrics
+from mil.data.datasets.loader import load_data
 from sklearn.decomposition import KernelPCA
 from sklearn.metrics.pairwise import rbf_kernel
+import matplotlib.pyplot as plt
 
 class KMEANS:
     def __init__(self, k: int, max_iter=2000):
@@ -109,9 +101,8 @@ class KMEANS:
 class CCE(Classifier):
     def __init__(self, d: int, max_iter: int):
         self._d = d
-        self._clustering_result_kmeans = None
         self._max_iter = max_iter
-        self._kmeans_model = None
+        self._models = None
 
     @property
     def d(self):
@@ -122,104 +113,151 @@ class CCE(Classifier):
         self._d = d
 
     @property
-    def clustering_result_kmeans(self):
-        return self._clustering_result_kmeans
-    
-    @clustering_result_kmeans.setter
-    def clustering_result_kmeans(self, clustering_result_kmeans):
-        self._clustering_result_kmeans = clustering_result_kmeans
-
-    @property
-    def kmeans_model(self):
-        return self._kmeans_model
-
-    @kmeans_model.setter
-    def kmeans_model(self, kmeans_model):
-        self._kmeans_model = kmeans_model
-
-    @property
     def max_iter(self):
         return self._max_iter
 
     @max_iter.setter
     def max_iter(self, max_iter):
         self._max_iter = max_iter
+    
+    @property
+    def models(self):
+        return self._models
+    
+    @models.setter
+    def models(self, models):
+        self._models = models
 
-    def generate_bag_feature_vector_kmeans(self, concept_class: np.ndarray, len_bags: int, X: List): 
-        new_bags_rep = np.zeros((len_bags, self.d))
+    def overlap(self, bag: np.ndarray, group_k: np.ndarray) -> int:
+        '''
+        function: find whether there are common instances between a bag and a cluster. 
+        params: 
+            bag: a bag of instances.
+            group_k: a cluster of instances.
+        return: 
+            1 if there are common instances and 0 otherwise. 
+        '''
+        for instance in bag:
+            for instance_in_cluster in group_k:
+                if np.array_equal(instance, instance_in_cluster):
+                    return 100
+        return 0
 
-        # # my k means
-        # kmeans = KMEANS(self.d, self.max_iter) 
-        # kmeans.fit(concept_class)
-        # self.clustering_result_kmeans = kmeans.clusters
+    def select_by_index(self, cluster_index: List, num_of_cluster: int, concept_class: np.ndarray) -> List:
+        '''
+        function: a helper method that selects all the elements with same indexes (clustered by kmeans) to form a set.
+        params: 
+            cluster_index: a List of indexes of clusters.
+            num_of_cluster: the total number of clusters.
+            concept_class: the unpacked bags (that is, a collection of instances).
+        return: 
+            A list of clusters (each cluster contains the corresponding instances). 
+        '''
+        clusters = []
+        for i in range(0, num_of_cluster):
+            cluster = []
+            index = np.where(cluster_index == i)
+            cluster = concept_class[index]
+            clusters.append(cluster)
+        return clusters
 
-        # # sklearn k means
-        # kmeans = KMeans(n_clusters=self.d, random_state=0).fit(concept_class)
-        # self.clustering_result_kmeans = kmeans.labels_
+    def generate_bag_feature_vector(self, concept_class: np.ndarray, len_bags: int, X: List) -> List: 
+        '''
+        function: generate the binary representation of each bag based on whether it contains instances from the kth cluster. 
+        params: 
+            concept_class: all concepts (instances).
+            len_bags: the number of bags. 
+            X: the list of bags.
+        return:
+            A list of new representation of features of each bag. 
+        '''
+        X = util.config_irregular_list(X)
+        config_feature_rep = []
+        for i in self.d:
 
-        # KPCA
-        kpca = KernelPCA(n_components=None, kernel='precomputed')
-        lambda_kpca = 0.5
-        kernel_old = lambda_kpca*pow(np.dot(concept_class, concept_class.T), 2) + (1-lambda_kpca)*rbf_kernel(concept_class)
-        old_kpca = kpca.fit_transform(kernel_old)
-        kmeans = KMeans(n_clusters=self.d, random_state=0).fit(old_kpca)
-        self.clustering_result_kmeans = kmeans.labels_
+            # using KMEANS 
+            kmeans = KMEANS(i, self.max_iter)
+            kmeans.fit(concept_class)
+            clustering_result = kmeans.clusters
 
-        # use a dict to match the cluster with the instances
-        cluster_dict = defaultdict()
-        for i in range(0, self.d):
-            index = np.where(self.clustering_result_kmeans == i)
-            cluster_dict[i] = concept_class[index]
-        for bag in range(0, len_bags):
-            new_bag_rep = np.zeros(self.d)
-            for instance_index in range(0, len(X[bag])):
-                instance = np.array(X[bag][instance_index])
-                for key, value in enumerate(cluster_dict): # loop through different clusters
-                    for temp in cluster_dict[key]: 
-                        if np.array_equal(instance, temp):
-                            new_bag_rep[key] = 1
-            new_bags_rep[bag] = new_bag_rep
-        return new_bags_rep
-
+            # using KPCA
+            # kpca = KernelPCA(n_components=None, kernel='precomputed')
+            # lambda_kpca = 0.6
+            # kernel_old = lambda_kpca * pow(np.dot(concept_class, concept_class.T), 2) + (1-lambda_kpca)*rbf_kernel(concept_class)
+            # old_kpca = kpca.fit_transform(kernel_old)
+            # kmeans = KMeans(n_clusters=self.d[0], random_state=0).fit(old_kpca)
+            # clustering_result = kmeans.labels_
+            clusters = self.select_by_index(clustering_result, i, concept_class)
+            s_i = []
+            for j in range(0, len_bags):
+                bag_vector = []
+                for k in clusters:
+                    k = np.array(k)
+                    instances_in_bag = np.array(X[j])
+                    bag_vector.append(self.overlap(instances_in_bag, k))
+                s_i.append(np.array(bag_vector))
+            s_i = np.array(s_i)
+            config_feature_rep.append(s_i)
+        return config_feature_rep
+    
+    def majority_vote(self, list_of_prediction: np.ndarray) -> np.ndarray:
+        prediction = []
+        for i in range(0, len(list_of_prediction[0])):
+            temp_list = []
+            for element in list_of_prediction:
+                temp_list.append(element[i])
+                maj_vote = np.bincount(temp_list).argmax()
+            prediction.append(maj_vote)
+        return np.array(prediction)
+                
     def fit(self, concept_class: np.ndarray, len_bags: int, X: List, labels: np.ndarray):
-        
-        new_bags_rep_kmeans = self.generate_bag_feature_vector_kmeans(concept_class, len_bags, X)
-        # self.kmeans_model = svm.SVC(kernel="rbf").fit(new_bags_rep_kmeans, labels) 
-        kernel = 1.0 * RBF(1.0)
-        self.kmeans_model = GaussianProcessClassifier(kernel=kernel, random_state=0).fit(new_bags_rep_kmeans, labels)
+        config_feature_rep = self.generate_bag_feature_vector(concept_class, len_bags, X)
+        models = []
+        for feature_rep in config_feature_rep:
+            model = svm.LinearSVC(penalty='l1', loss='squared_hinge', dual=False, C=0.5, max_iter=10000).fit(feature_rep, labels)
+            models.append(model)
+        self.models = models
 
     def predict(self, test_concept_class: np.ndarray, len_bags: int, bags_test: List):
-        new_bags_rep_kmeans = self.generate_bag_feature_vector_kmeans(test_concept_class, len_bags, bags_test)
-        prediction_kmeans = self.kmeans_model.predict(new_bags_rep_kmeans)
-        return prediction_kmeans
+        models = self.models
+        config_feature_rep = self.generate_bag_feature_vector(test_concept_class, len_bags, bags_test)
+        prediction_list = []
+        for i in range(len(models)): 
+            prediction = models[i].predict(config_feature_rep[i])
+            prediction_list.append(prediction)
+        ret_prediction = self.majority_vote(prediction_list)
+        return ret_prediction
 
-def load_musk1():
-    return load_data('/Users/ningjia/Desktop/440-Final-Project/dataset/musk1.csv')
+def evaluate_and_print_metrics(datapath: str, d: int, max_iter: int): 
+    (bags_train, y_train), (bags_test, y_test) = util.load_data(datapath)
+    list_bag_train = bags_train.copy()
+    list_bag_test = bags_test.copy()
+    bags_train = util.config_irregular_list(bags_train)
+    concept_class = util.generate_concept_class(bags_train)
+    y_train = np.array(y_train)
+    bags_test = util.config_irregular_list(bags_test)
+    y_test = np.array(y_test)
+    test_concept_class = util.generate_concept_class(bags_test)
+    e = CCE(d, max_iter)
+    e.fit(concept_class, len(list_bag_train), list_bag_train, y_train)
+    prediction = e.predict(test_concept_class, len(list_bag_test), list_bag_test)
+    print("Accuracy Score: ", metrics.accuracy_score(y_test, prediction))
+    print("Precision Score: ", metrics.precision_score(y_test, prediction))
+    print("Recall Score: ", metrics.recall_score(y_test, prediction))
+    fpr, tpr, thresholds = metrics.roc_curve(y_test, prediction)
+    print("AUC Score: ", metrics.auc(fpr, tpr))
 
-(bags_train, y_train), (bags_test, y_test) = load_musk1()
-list_bag_train = bags_train.copy()
-bags_train = util.config_irregular_list(bags_train)
-y_train = np.array(y_train)
-# bags_test = util.config_irregular_list(bags_test)
-y_test = np.array(y_test)
-concept_class = util.generate_concept_class(bags_train)
-test_concept_class = util.generate_concept_class(bags_test)
-cce = CCE(5, 3000) 
-#7: 0.6842
-cce.fit(concept_class, len(bags_train), list_bag_train, y_train)
-y_pred = cce.predict(test_concept_class, len(bags_test), bags_test)
-print(y_test)    
-print("accuracy:", metrics.accuracy_score(y_test, y_pred))
-
-
-# if __name__ == '__main__':
-#     # Set up argparse arguments
-#     parser = argparse.ArgumentParser(description='Run CCE algorithm.')
-#     parser.add_argument('path', metavar='PATH', type=str, help='The path to the data.')
-#     parser.add_argument('d', type=int, help='The number of clusters for the clustering algorithm.')
-#     args = parser.parse_args()
-#     if args.d < 0 :
-#        raise argparse.ArgumentTypeError('d must be a positive number.')
-#     path = os.path.expanduser(args.path)
-#     d = args.d
-#     # cce(path, sigma, C)
+def cce(datapath: str, d: int, max_iter: int):
+    evaluate_and_print_metrics(datapath, d, max_iter)
+    
+if __name__ == '__main__':
+    # Set up argparse arguments
+    parser = argparse.ArgumentParser(description='Run CCE algorithm.')
+    parser.add_argument('path', metavar='PATH', type=str, help='The path to the data.')
+    parser.add_argument('-d', type=int, nargs="+", help='The number of clusters for the clustering algorithm.')
+    parser.add_argument('-max_iter', type=int, help='The maximum number of iteration for clustering algorithm.')
+    args = parser.parse_args()
+    path = os.path.expanduser(args.path)
+    d = args.d
+    max_iter = args.max_iter
+    cce(path, d, max_iter)

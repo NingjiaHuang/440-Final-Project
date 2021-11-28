@@ -138,6 +138,8 @@ def evaluate_and_print_metrics(datapath: str, sigma: float, C: float):
     print("Accuracy Score: ", metrics.accuracy_score(y_test, prediction))
     print("Precision Score: ", metrics.precision_score(y_test, prediction))
     print("Recall Score: ", metrics.recall_score(y_test, prediction))
+    fpr, tpr, thresholds = metrics.roc_curve(y_test, prediction)
+    print("AUC Score: ", metrics.auc(fpr, tpr))
 
 def miles(datapath: str, sigma: float, C: float):
     evaluate_and_print_metrics(datapath, sigma, C)
