@@ -11,6 +11,8 @@ import os.path
 from sklearn.preprocessing import StandardScaler
 from Classifier import Classifier
 from sklearn import metrics
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import cross_val_score
 
 class MILES(Classifier):
     def __init__(self, sigma, C):
@@ -126,20 +128,37 @@ class MILES(Classifier):
 
 def evaluate_and_print_metrics(datapath: str, sigma: float, C: float): 
     (bags_train, y_train), (bags_test, y_test) = util.load_data(datapath)
-    bags_train = util.config_irregular_list(bags_train)
-    y_train = np.array(y_train)
-    bags_test = util.config_irregular_list(bags_test)
-    y_test = np.array(y_test)
+    bags = []
+    bags.extend(bags_train)
+    bags.extend(bags_test)
+    y = []
+    y.extend(y_train)
+    y.extend(y_test)
     e = MILES(sigma, C)
-    bags_train, y_train = e.preprocess_data(bags_train, y_train)
-    bags_test, y_test = e.preprocess_data(bags_test, y_test)
-    e.fit(bags_train, y_train)
-    prediction = e.predict(bags_test)
-    print("Accuracy Score: ", metrics.accuracy_score(y_test, prediction))
-    print("Precision Score: ", metrics.precision_score(y_test, prediction))
-    print("Recall Score: ", metrics.recall_score(y_test, prediction))
-    fpr, tpr, thresholds = metrics.roc_curve(y_test, prediction)
-    print("AUC Score: ", metrics.auc(fpr, tpr))
+    acc_list, rec_list, pre_list, auc_list = [], [], [], []
+    for count in range(0, 10): 
+        bags_train, bags_test, y_train, y_test = train_test_split(bags, y, test_size=0.1)
+        bags_train = util.config_irregular_list(bags_train)
+        y_train = np.array(y_train)
+        bags_test = util.config_irregular_list(bags_test)
+        y_test = np.array(y_test)
+        bags_train, y_train = e.preprocess_data(bags_train, y_train)
+        bags_test, y_test = e.preprocess_data(bags_test, y_test)
+        e.fit(bags_train, y_train)
+        prediction = e.predict(bags_test)
+        acc_list.append(metrics.accuracy_score(y_test, prediction))
+        rec_list.append(metrics.recall_score(y_test, prediction))
+        pre_list.append(metrics.precision_score(y_test, prediction))
+        fpr, tpr, thresholds = metrics.roc_curve(y_test, prediction)
+        auc_list.append(metrics.auc(fpr, tpr))
+    acc_mean, acc_std = np.mean(acc_list), np.std(acc_list)
+    prec_mean, prec_std = np.mean(pre_list), np.std(pre_list)
+    recall_mean, recall_std = np.mean(rec_list), np.std(rec_list)
+    auc_mean, auc_std = np.mean(auc_list), np.std(auc_list)
+    print("Accuracy:", np.round(acc_mean, 3),  np.round(acc_std, 3))
+    print("Precision:", np.round(prec_mean, 3),  np.round(prec_std, 3))
+    print("Recall:", np.round(recall_mean, 3),  np.round(recall_std, 3))
+    print("AUC:", np.round(auc_mean, 3), np.round(auc_std, 3))
 
 def miles(datapath: str, sigma: float, C: float):
     evaluate_and_print_metrics(datapath, sigma, C)

@@ -1,6 +1,7 @@
 import numpy as np
-from typing import List
+from typing import List, Tuple
 from mil.data.datasets.loader import load_data
+import random
 
 def most_likely_cause_estimator(concept_instance: np.array, bag: np.ndarray, sigma: float) -> float:
     '''
@@ -47,3 +48,4 @@ def load_data_csv(path):
 
 def euclidean_distance(x1: np.ndarray, x2: np.ndarray):
     return np.sqrt(np.sum((x1.reshape(1, x2.shape[1])-x2)**2, axis=1))
+

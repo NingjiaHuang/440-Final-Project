@@ -13,6 +13,9 @@ from mil.data.datasets.loader import load_data
 from sklearn.decomposition import KernelPCA
 from sklearn.metrics.pairwise import rbf_kernel
 import matplotlib.pyplot as plt
+from sklearn.model_selection import RepeatedKFold
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import train_test_split
 
 class KMEANS:
     def __init__(self, k: int, max_iter=2000):
@@ -230,22 +233,53 @@ class CCE(Classifier):
 
 def evaluate_and_print_metrics(datapath: str, d: int, max_iter: int): 
     (bags_train, y_train), (bags_test, y_test) = util.load_data(datapath)
-    list_bag_train = bags_train.copy()
-    list_bag_test = bags_test.copy()
-    bags_train = util.config_irregular_list(bags_train)
-    concept_class = util.generate_concept_class(bags_train)
-    y_train = np.array(y_train)
-    bags_test = util.config_irregular_list(bags_test)
-    y_test = np.array(y_test)
-    test_concept_class = util.generate_concept_class(bags_test)
+    bags = []
+    bags.extend(bags_train)
+    bags.extend(bags_test)
+    y = []
+    y.extend(y_train)
+    y.extend(y_test)
     e = CCE(d, max_iter)
-    e.fit(concept_class, len(list_bag_train), list_bag_train, y_train)
-    prediction = e.predict(test_concept_class, len(list_bag_test), list_bag_test)
-    print("Accuracy Score: ", metrics.accuracy_score(y_test, prediction))
-    print("Precision Score: ", metrics.precision_score(y_test, prediction))
-    print("Recall Score: ", metrics.recall_score(y_test, prediction))
-    fpr, tpr, thresholds = metrics.roc_curve(y_test, prediction)
-    print("AUC Score: ", metrics.auc(fpr, tpr))
+    acc, prec, rec, auc = [], [], [], []
+    for i in range(2, 81):
+        acc_list, rec_list, pre_list, auc_list = [], [], [], []
+        for count in range(0, 10): 
+            bags_train, bags_test, y_train, y_test = train_test_split(bags, y, test_size=0.1)
+            bags_train_array = util.config_irregular_list(bags_train)
+            concept_class = util.generate_concept_class(bags_train)
+            y_train_array = np.array(y_train)
+            bags_test_array = util.config_irregular_list(bags_test)
+            y_test_array = np.array(y_test)
+            test_concept_class = util.generate_concept_class(bags_test)
+            e.fit(concept_class, len(bags_train), bags_train, y_train_array)
+            prediction = e.predict(test_concept_class, len(bags_test), bags_test)
+            acc_list.append(metrics.accuracy_score(y_test, prediction))
+            rec_list.append(metrics.recall_score(y_test, prediction))
+            pre_list.append(metrics.precision_score(y_test, prediction))
+            fpr, tpr, thresholds = metrics.roc_curve(y_test, prediction)
+            auc_list.append(metrics.auc(fpr, tpr))
+        acc_mean, acc_std = np.mean(acc_list), np.std(acc_list)
+        prec_mean, prec_std = np.mean(pre_list), np.std(pre_list)
+        recall_mean, recall_std = np.mean(rec_list), np.std(rec_list)
+        auc_mean, auc_std = np.mean(auc_list), np.std(auc_list)
+        # print("Accuracy:", np.round(acc_mean, 3),  np.round(acc_std, 3))
+        # print("Precision:", np.round(prec_mean, 3),  np.round(prec_std, 3))
+        # print("Recall:", np.round(recall_mean, 3),  np.round(recall_std, 3))
+        # print("AUC:", np.round(auc_mean, 3), np.round(auc_std, 3))
+        acc.append(acc_mean)
+        prec.append(prec_mean)
+        rec.append(recall_mean)
+        auc.append(auc_mean)
+    x = [i for i in range(2, 81)]
+    plt.plot(x, auc)
+    plt.xlabel("number of clusters")
+    plt.ylabel("acc score")
+    plt.title("number of clusters v.s. accuracy")
+    plt.show()
+    print("acc: ", acc)
+    print("prec: ", prec)
+    print("reac: ", rec)
+    print("auc: ", auc)
 
 def cce(datapath: str, d: int, max_iter: int):
     evaluate_and_print_metrics(datapath, d, max_iter)
