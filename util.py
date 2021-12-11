@@ -5,7 +5,7 @@ import random
 
 def most_likely_cause_estimator(concept_instance: np.array, bag: np.ndarray, sigma: float) -> float:
     '''
-    function: similarity measure between the bag and the concept
+    function: max similarity measure between the bag and the concept
     params: 
         concept_instance: an instance in the dataset 
         bag: bag to be classified
@@ -49,3 +49,19 @@ def load_data_csv(path):
 def euclidean_distance(x1: np.ndarray, x2: np.ndarray):
     return np.sqrt(np.sum((x1.reshape(1, x2.shape[1])-x2)**2, axis=1))
 
+'''----------------------Extension----------------------'''
+def sum_likelihood_estimator(concept_instance: np.array, bag: np.ndarray, sigma: float):
+    '''
+    function: sum similarity measure between the bag and the concept
+    params: 
+        concept_instance: an instance in the dataset 
+        bag: bag to be classified
+        sigma: scaling factor
+    return: 
+        maximum similarity between the target concept and the bag instances
+    '''
+    similarity_list = []
+    for instance in bag: 
+        if len(np.unique(instance)) > 1: 
+            similarity_list.append(((np.linalg.norm(instance - concept_instance) ** 2/(sigma ** 2))))
+    return 0.3 * sum(similarity_list) + 0.7 * max(similarity_list)

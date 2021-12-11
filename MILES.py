@@ -1,4 +1,4 @@
-from typing import List
+from typing import _SpecialForm, List
 import numpy as np
 from numpy.core.multiarray import concatenate
 from numpy.matrixlib import matrix
@@ -13,6 +13,8 @@ from Classifier import Classifier
 from sklearn import metrics
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import cross_val_score
+from sklearn import tree
+from sklearn.linear_model import LogisticRegression
 
 class MILES(Classifier):
     def __init__(self, sigma, C):
@@ -20,7 +22,8 @@ class MILES(Classifier):
         self._C = C
         self._model = None
         self._concept = None
-    
+        self._model_tree = None
+        self._model_logistic = None
     @property
     def sigma(self):
         return self._sigma
@@ -55,6 +58,22 @@ class MILES(Classifier):
     @concept.setter
     def concept(self, concept):
         self._concept = concept
+    
+    @property
+    def model_tree(self):
+        return self._model_tree
+        
+    @model_tree.setter
+    def model_tree(self, model_tree):
+        self._model_tree = model_tree
+
+    @property
+    def model_logistic(self):
+        return self._model_logistic
+        
+    @model_logistic.setter
+    def model_logistic(self, model_logistic):
+        self._model_logistic = model_logistic
 
     def preprocess_data(self, bags_data: np.ndarray, labels: np.ndarray): 
         ''' The embedded feature space requires the matrix to have all positive bags at the front and all negative bags at the end. '''
@@ -85,7 +104,7 @@ class MILES(Classifier):
         '''
         embedded_bag = []
         for concept in concept_class:
-            embedded_bag.append(util.most_likely_cause_estimator(concept, bag, sigma))
+            embedded_bag.append(util.sum_likelihood_estimator(concept, bag, sigma))
         return np.array(embedded_bag)
 
     def embed_all_bags(self, concept_class: np.ndarray, bags: np.ndarray, sigma: float):
@@ -103,9 +122,6 @@ class MILES(Classifier):
             embedded_bags.append(self.embed_one_bag(concept_class, bag, sigma))
         return np.array(embedded_bags).T
     
-    def extension_YARDS():
-        pass
-    
     def fit(self, training_data: np.ndarray, training_labels: np.ndarray):
         '''
         function: generate the svm model for prediction purpose
@@ -118,13 +134,28 @@ class MILES(Classifier):
         mapped_bags = self.embed_all_bags(concept_class, training_data, self.sigma)
         svm_l1 = svm.LinearSVC(penalty='l1', loss='squared_hinge', dual=False, C=self.C, max_iter=100000) # does not support the combination of penalty=l1 and loss=hinge.
         self.model = svm_l1.fit(mapped_bags.T, training_labels)
+        '''----------------------Extension----------------------'''
+        self.model_tree = tree.DecisionTreeClassifier().fit(mapped_bags.T, training_labels)
+        self.model_logistic = LogisticRegression(random_state=0).fit(mapped_bags.T, training_labels)
 
     def predict(self, test_bags: np.ndarray):
         # embed bags into an instance-based feature space
         concepts = util.generate_concept_class(test_bags)
         mapped_bags = self.embed_all_bags(self.concept, test_bags, self.sigma)
-        prediction = self.model.predict(mapped_bags.T)
-        return prediction
+        prediction_logistic = self.model_logistic.predict(mapped_bags.T)
+        prediction_tree = self.model_tree.predict(mapped_bags.T)
+        prediction_svm = self.model.predict(mapped_bags.T)
+        return majority_vote([prediction_logistic, prediction_svm, prediction_tree])
+
+def majority_vote(list_of_prediction: np.ndarray) -> np.ndarray:
+        prediction = []
+        for i in range(0, len(list_of_prediction[0])):
+            temp_list = []
+            for element in list_of_prediction:
+                temp_list.append(element[i])
+                maj_vote = np.bincount(temp_list).argmax()
+            prediction.append(maj_vote)
+        return np.array(prediction)
 
 def evaluate_and_print_metrics(datapath: str, sigma: float, C: float): 
     (bags_train, y_train), (bags_test, y_test) = util.load_data(datapath)
@@ -146,6 +177,12 @@ def evaluate_and_print_metrics(datapath: str, sigma: float, C: float):
         bags_test, y_test = e.preprocess_data(bags_test, y_test)
         e.fit(bags_train, y_train)
         prediction = e.predict(bags_test)
+        # res = majority_vote([prediction, prediction2, prediction3])
+        # acc_list.append(metrics.accuracy_score(y_test, prediction))
+        # rec_list.append(metrics.recall_score(y_test, prediction))
+        # pre_list.append(metrics.precision_score(y_test, prediction))
+        # fpr, tpr, thresholds = metrics.roc_curve(y_test, prediction)
+        # auc_list.append(metrics.auc(fpr, tpr))
         acc_list.append(metrics.accuracy_score(y_test, prediction))
         rec_list.append(metrics.recall_score(y_test, prediction))
         pre_list.append(metrics.precision_score(y_test, prediction))

@@ -59,7 +59,7 @@ class KMEANS:
     def init_centroids(self, X: np.ndarray): 
         '''Randomly choose k centroids for initialization.'''
         num_instances, num_features = np.shape(X)
-        rand_center = np.random.choice(num_instances, self.k, replace=False) # sample without replacement
+        rand_center = np.random.choice(num_instances, self.k, replace=True) # sample without replacement
         centroids = X[rand_center, :].copy()
         self.centroids = np.array(centroids)
         return self.centroids
@@ -176,32 +176,33 @@ class CCE(Classifier):
         '''
         X = util.config_irregular_list(X)
         config_feature_rep = []
-        for i in self.d:
-
-            # using KMEANS 
-            kmeans = KMEANS(i, self.max_iter)
-            kmeans.fit(concept_class)
-            clustering_result = kmeans.clusters
-
-            # using KPCA
-            # kpca = KernelPCA(n_components=None, kernel='precomputed')
-            # lambda_kpca = 0.6
-            # kernel_old = lambda_kpca * pow(np.dot(concept_class, concept_class.T), 2) + (1-lambda_kpca)*rbf_kernel(concept_class)
-            # old_kpca = kpca.fit_transform(kernel_old)
-            # kmeans = KMeans(n_clusters=self.d[0], random_state=0).fit(old_kpca)
-            # clustering_result = kmeans.labels_
-            clusters = self.select_by_index(clustering_result, i, concept_class)
-            s_i = []
-            for j in range(0, len_bags):
-                bag_vector = []
-                for k in clusters:
-                    k = np.array(k)
-                    instances_in_bag = np.array(X[j])
-                    bag_vector.append(self.overlap(instances_in_bag, k))
-                s_i.append(np.array(bag_vector))
-            s_i = np.array(s_i)
-            config_feature_rep.append(s_i)
-        return config_feature_rep
+        # for i in self.d:
+        # using KMEANS 
+        kmeans = KMEANS(self.d, self.max_iter)
+        kmeans.fit(concept_class)
+        clustering_result = kmeans.clusters
+        '''----------------------Extension----------------------'''
+        # using KPCA
+        # kpca = KernelPCA(n_components=None, kernel='precomputed')
+        # lambda_kpca = 0.6
+        # kernel_old = lambda_kpca * pow(np.dot(concept_class, concept_class.T), 2) + (1-lambda_kpca)*rbf_kernel(concept_class)
+        # old_kpca = kpca.fit_transform(kernel_old)
+        # kmeans = KMeans(10, random_state=0).fit(old_kpca)
+        # clustering_result = kmeans.labels_
+        '''-----------------------------------------------------'''
+        clusters = self.select_by_index(clustering_result, self.d, concept_class)
+        s_i = []
+        for j in range(0, len_bags):
+            bag_vector = []
+            for k in clusters:
+                k = np.array(k)
+                instances_in_bag = np.array(X[j])
+                bag_vector.append(self.overlap(instances_in_bag, k))
+            s_i.append(np.array(bag_vector))
+        s_i = np.array(s_i)
+        config_feature_rep.append(s_i)
+        print("config feature rep: ", config_feature_rep[0])
+        return config_feature_rep[0]
     
     def majority_vote(self, list_of_prediction: np.ndarray) -> np.ndarray:
         prediction = []
@@ -215,21 +216,19 @@ class CCE(Classifier):
                 
     def fit(self, concept_class: np.ndarray, len_bags: int, X: List, labels: np.ndarray):
         config_feature_rep = self.generate_bag_feature_vector(concept_class, len_bags, X)
-        models = []
-        for feature_rep in config_feature_rep:
-            model = svm.LinearSVC(penalty='l1', loss='squared_hinge', dual=False, C=0.5, max_iter=10000).fit(feature_rep, labels)
-            models.append(model)
-        self.models = models
+        print(config_feature_rep)
+        # models = []
+        # for feature_rep in config_feature_rep:
+        model = svm.LinearSVC(penalty='l1', loss='squared_hinge', dual=False, C=0.5, max_iter=10000).fit(config_feature_rep, labels)
+        # models.append(model)
+        self.models = model
 
     def predict(self, test_concept_class: np.ndarray, len_bags: int, bags_test: List):
         models = self.models
         config_feature_rep = self.generate_bag_feature_vector(test_concept_class, len_bags, bags_test)
         prediction_list = []
-        for i in range(len(models)): 
-            prediction = models[i].predict(config_feature_rep[i])
-            prediction_list.append(prediction)
-        ret_prediction = self.majority_vote(prediction_list)
-        return ret_prediction
+        prediction = models.predict(config_feature_rep)
+        return prediction
 
 def evaluate_and_print_metrics(datapath: str, d: int, max_iter: int): 
     (bags_train, y_train), (bags_test, y_test) = util.load_data(datapath)
@@ -239,11 +238,12 @@ def evaluate_and_print_metrics(datapath: str, d: int, max_iter: int):
     y = []
     y.extend(y_train)
     y.extend(y_test)
-    e = CCE(d, max_iter)
-    acc, prec, rec, auc = [], [], [], []
-    for i in range(2, 81):
+    acc, prec, rec, auc,  = [], [], [], []
+    acc_stdl, prec_stdl, rec_stdl, auc_stdl = [], [], [], []
+    for i in range(30, 31):
         acc_list, rec_list, pre_list, auc_list = [], [], [], []
         for count in range(0, 10): 
+            e = CCE(i, max_iter)
             bags_train, bags_test, y_train, y_test = train_test_split(bags, y, test_size=0.1)
             bags_train_array = util.config_irregular_list(bags_train)
             concept_class = util.generate_concept_class(bags_train)
@@ -267,19 +267,30 @@ def evaluate_and_print_metrics(datapath: str, d: int, max_iter: int):
         # print("Recall:", np.round(recall_mean, 3),  np.round(recall_std, 3))
         # print("AUC:", np.round(auc_mean, 3), np.round(auc_std, 3))
         acc.append(acc_mean)
+        acc_stdl.append(acc_std)
         prec.append(prec_mean)
+        prec_stdl.append(prec_std)
         rec.append(recall_mean)
+        rec_stdl.append(recall_std)
         auc.append(auc_mean)
-    x = [i for i in range(2, 81)]
+        auc_stdl.append(auc_std)
+    x = [i for i in range(30, 31)]
+    plt.plot(x, acc)
+    plt.plot(x, prec)
+    plt.plot(x, rec)
     plt.plot(x, auc)
     plt.xlabel("number of clusters")
     plt.ylabel("acc score")
     plt.title("number of clusters v.s. accuracy")
     plt.show()
-    print("acc: ", acc)
-    print("prec: ", prec)
-    print("reac: ", rec)
-    print("auc: ", auc)
+    # print("acc: ", acc)
+    # print("prec: ", prec)
+    # print("reac: ", rec)
+    # print("auc: ", auc)
+    # print("acc_std: ", acc_stdl)
+    # print("prec_std: ", prec_stdl)
+    # print("rec_std: ", rec_stdl)
+    # print("auc_std: ", auc_stdl)
 
 def cce(datapath: str, d: int, max_iter: int):
     evaluate_and_print_metrics(datapath, d, max_iter)
